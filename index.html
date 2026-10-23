@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>讯环 PingRing — 定时任务与服务存活监控</title>
+<meta name="description" content="讯环 PingRing：为定时任务、批处理与在线服务站岗。任务漏跑、服务掉线，第一时间通过企业微信、钉钉、飞书通知你。私有化部署，买断授权，无订阅费。">
+<style>
+    :root {
+        --paper: #faf8f4;
+        --ink: #1d1b16;
+        --ink-soft: #55524a;
+        --line: #ddd5c6;
+        --bronze: #a98548;
+        --green: #1ea65a;
+        --red: #c94f42;
+        --amber: #d99a26;
+        --card: #fffdf9;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "PingFang SC", "Noto Sans CJK SC", "Microsoft YaHei", sans-serif;
+        line-height: 1.75;
+        -webkit-font-smoothing: antialiased;
+    }
+    .serif { font-family: "Songti SC", "Noto Serif CJK SC", "SimSun", serif; }
+    .wrap { max-width: 1060px; margin: 0 auto; padding: 0 28px; }
+
+    /* ---------- header ---------- */
+    header {
+        border-bottom: 1px solid var(--line);
+        position: sticky; top: 0; background: rgba(250,248,244,.92);
+        backdrop-filter: blur(6px); z-index: 10;
+    }
+    .nav { display: flex; align-items: center; justify-content: space-between; height: 68px; }
+    .brand { display: flex; align-items: center; gap: 12px; text-decoration: none; color: var(--ink); }
+    .brand svg { display: block; }
+    .brand .name { font-size: 21px; letter-spacing: .28em; font-weight: 600; }
+    .brand .name small { letter-spacing: .12em; color: var(--ink-soft); font-weight: 400; font-size: 13px; margin-left: 6px; }
+    .nav-links a { color: var(--ink-soft); text-decoration: none; margin-left: 30px; font-size: 14.5px; letter-spacing: .14em; }
+    .nav-links a:hover { color: var(--ink); }
+    .nav-links a.cta {
+        color: var(--ink); border: 1px solid var(--ink); padding: 7px 18px; border-radius: 2px;
+    }
+    .nav-links a.cta:hover { background: var(--ink); color: var(--paper); }
+
+    /* ---------- hero ---------- */
+    .hero { padding: 96px 0 72px; text-align: center; }
+    .eyebrow { letter-spacing: .55em; font-size: 12.5px; color: var(--bronze); text-indent: .55em; }
+    .hero h1 { font-size: 46px; font-weight: 600; letter-spacing: .1em; margin: 26px 0 8px; line-height: 1.35; }
+    .hero .sub { font-size: 17.5px; color: var(--ink-soft); max-width: 640px; margin: 14px auto 0; }
+    .pulse-box { margin: 46px auto 8px; max-width: 720px; }
+    .pulse-line { stroke-dasharray: 900; stroke-dashoffset: 900; animation: draw 3.2s ease forwards infinite alternate; }
+    @keyframes draw { to { stroke-dashoffset: 0; } }
+    .hero-cta { margin-top: 34px; display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+        display: inline-block; text-decoration: none; font-size: 15px; letter-spacing: .2em;
+        padding: 13px 36px 13px calc(36px + .2em); border-radius: 2px;
+    }
+    .btn-dark { background: var(--ink); color: var(--paper); }
+    .btn-dark:hover { background: #000; }
+    .btn-ghost { border: 1px solid var(--ink); color: var(--ink); }
+    .btn-ghost:hover { background: var(--ink); color: var(--paper); }
+    .hero-note { margin-top: 18px; font-size: 13px; color: var(--ink-soft); letter-spacing: .08em; }
+
+    /* ---------- sections ---------- */
+    section { padding: 74px 0; }
+    .rule { border: none; border-top: 1px solid var(--line); }
+    .sec-head { text-align: center; margin-bottom: 48px; }
+    .sec-head .kicker { letter-spacing: .5em; text-indent: .5em; font-size: 12px; color: var(--bronze); }
+    .sec-head h2 { font-size: 30px; letter-spacing: .14em; font-weight: 600; margin-top: 14px; }
+    .sec-head p { color: var(--ink-soft); margin-top: 10px; font-size: 15.5px; }
+
+    .pains { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+    .pain { border-top: 2px solid var(--ink); padding-top: 18px; }
+    .pain h3 { font-size: 17px; letter-spacing: .06em; margin-bottom: 8px; }
+    .pain p { color: var(--ink-soft); font-size: 14.5px; }
+
+    /* ---------- mock dashboard ---------- */
+    .mock {
+        background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+        box-shadow: 0 18px 44px rgba(29,27,22,.08); overflow: hidden; max-width: 820px; margin: 0 auto;
+    }
+    .mock-bar {
+        display: flex; align-items: center; gap: 7px; padding: 12px 16px;
+        border-bottom: 1px solid var(--line); background: #f3efe6;
+    }
+    .mock-bar i { width: 11px; height: 11px; border-radius: 50%; display: block; }
+    .mock-bar span { margin-left: 10px; font-size: 12.5px; color: var(--ink-soft); letter-spacing: .1em; }
+    .mock-row {
+        display: flex; align-items: center; gap: 14px; padding: 15px 20px;
+        border-bottom: 1px solid #eee7d9; font-size: 14.5px;
+    }
+    .mock-row:last-child { border-bottom: none; }
+    .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+    .dot.up { background: var(--green); } .dot.grace { background: var(--amber); } .dot.down { background: var(--red); }
+    .mock-row .nm { font-weight: 600; letter-spacing: .03em; }
+    .mock-row .tag { font-size: 12px; color: var(--ink-soft); border: 1px solid var(--line); border-radius: 2px; padding: 0 7px; }
+    .mock-row .meta { margin-left: auto; color: var(--ink-soft); font-size: 13px; white-space: nowrap; }
+    .mock-row .st { font-size: 13px; width: 64px; text-align: right; flex: none; }
+    .mock-cap { text-align: center; color: var(--ink-soft); font-size: 12.5px; margin-top: 14px; letter-spacing: .14em; }
+
+    /* ---------- features ---------- */
+    .features { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; }
+    .feature { background: var(--card); border: 1px solid var(--line); padding: 30px 26px; border-radius: 4px; }
+    .feature .no { color: var(--bronze); font-size: 13px; letter-spacing: .3em; }
+    .feature h3 { font-size: 18px; letter-spacing: .06em; margin: 12px 0 8px; }
+    .feature p { color: var(--ink-soft); font-size: 14.5px; }
+    .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 34px; }
+    .chip { border: 1px solid var(--line); background: var(--card); padding: 6px 16px; border-radius: 999px; font-size: 13.5px; color: var(--ink-soft); }
+    .chip.hot { border-color: var(--bronze); color: var(--ink); font-weight: 600; }
+
+    /* ---------- steps ---------- */
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 26px; counter-reset: step; }
+    .step { padding: 6px 4px; }
+    .step .n { font-size: 40px; color: var(--bronze); line-height: 1; }
+    .step h3 { font-size: 17.5px; letter-spacing: .08em; margin: 14px 0 8px; }
+    .step p { color: var(--ink-soft); font-size: 14.5px; }
+    code, .codebox {
+        font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px;
+    }
+    .codebox {
+        background: #23211c; color: #e8e2d2; border-radius: 4px; padding: 16px 18px;
+        margin-top: 14px; overflow-x: auto; white-space: nowrap; line-height: 1.7;
+    }
+    .codebox .cm { color: #8f887a; }
+
+    /* ---------- pricing ---------- */
+    .pricing { display: grid; grid-template-columns: 1fr 1fr; gap: 26px; max-width: 860px; margin: 0 auto; }
+    .price-card { background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 40px 38px; }
+    .price-card.pro { border: 1px solid var(--ink); box-shadow: 0 18px 44px rgba(29,27,22,.09); }
+    .price-card .tier { letter-spacing: .4em; font-size: 13px; color: var(--bronze); }
+    .price-card .amount { font-size: 44px; margin: 14px 0 2px; }
+    .price-card .amount small { font-size: 15px; color: var(--ink-soft); letter-spacing: .1em; }
+    .price-card .once { color: var(--ink-soft); font-size: 13.5px; letter-spacing: .12em; margin-bottom: 22px; }
+    .price-card ul { list-style: none; }
+    .price-card li { padding: 9px 0 9px 26px; position: relative; font-size: 15px; border-top: 1px solid #f0ead9; }
+    .price-card li::before { content: "—"; position: absolute; left: 0; color: var(--bronze); }
+    .price-note { text-align: center; color: var(--ink-soft); font-size: 13.5px; margin-top: 26px; letter-spacing: .06em; }
+    .price-card .btn { margin-top: 26px; }
+    .order-form { max-width: 640px; margin: 0 auto; background: var(--card); border: 1px solid var(--line); border-radius: 4px; padding: 40px 38px; }
+    .order-form .field { margin-bottom: 22px; }
+    .order-form label { display: block; font-size: 13px; letter-spacing: .25em; color: var(--bronze); margin-bottom: 8px; }
+    .order-form input, .order-form select, .order-form textarea { width: 100%; box-sizing: border-box; background: transparent; border: none; border-bottom: 1px solid var(--line); padding: 9px 2px; font-size: 16px; color: var(--ink); font-family: inherit; border-radius: 0; }
+    .order-form input:focus, .order-form select:focus, .order-form textarea:focus { outline: none; border-bottom-color: var(--ink); }
+    .order-form textarea { resize: vertical; min-height: 72px; }
+    .order-form .btn { width: 100%; margin-top: 6px; cursor: pointer; }
+    .order-note { text-align: center; color: var(--ink-soft); font-size: 13.5px; margin-top: 22px; letter-spacing: .06em; line-height: 1.9; }
+    .thanks-box { display: none; max-width: 640px; margin: 0 auto 30px; border: 1px solid var(--ink); background: var(--card); padding: 28px 34px; text-align: center; line-height: 2; }
+    .thanks-box.show { display: block; }
+
+    /* ---------- faq ---------- */
+    .faq { max-width: 780px; margin: 0 auto; }
+    .faq-item { border-top: 1px solid var(--line); padding: 22px 4px; }
+    .faq-item:last-child { border-bottom: 1px solid var(--line); }
+    .faq-item h3 { font-size: 16.5px; letter-spacing: .05em; margin-bottom: 6px; }
+    .faq-item p { color: var(--ink-soft); font-size: 14.5px; }
+
+    /* ---------- footer ---------- */
+    .final { text-align: center; }
+    .final h2 { font-size: 30px; letter-spacing: .14em; font-weight: 600; }
+    .final p { color: var(--ink-soft); margin: 12px 0 26px; }
+    footer { border-top: 1px solid var(--line); padding: 34px 0 44px; color: var(--ink-soft); font-size: 13px; }
+    footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+    footer a { color: var(--ink-soft); }
+
+    @media (max-width: 820px) {
+        .pains, .features, .steps { grid-template-columns: 1fr; }
+        .pricing { grid-template-columns: 1fr; }
+        .hero h1 { font-size: 33px; }
+        .nav-links a { margin-left: 16px; }
+        .nav-links a:not(.cta) { display: none; }
+        .mock-row .meta { display: none; }
+    }
+</style>
+</head>
+<body>
+
+<header>
+    <div class="wrap nav">
+        <a class="brand" href="#">
+            <svg width="34" height="34" viewBox="0 0 120 120" aria-hidden="true">
+                <circle cx="60" cy="60" r="41" fill="none" stroke="#33333f" stroke-width="11"/>
+                <polyline points="25,60 46,60 54,35 67,85 74,60 95,60" fill="none" stroke="#22bc66" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span class="name serif">讯环<small>PingRing</small></span>
+        </a>
+        <nav class="nav-links">
+            <a href="#features">功能</a>
+            <a href="#install">部署</a>
+            <a href="#pricing">价格</a>
+            <a href="#faq">常见问题</a>
+            <a class="cta" href="mailto:huoyuan453@gmail.com">邮件咨询</a>
+        </nav>
+    </div>
+</header>
+
+<div class="hero wrap">
+    <div class="eyebrow">定时任务 · 服务存活 · 故障告警</div>
+    <h1 class="serif">任务没跑，系统比你先知道</h1>
+    <p class="sub">讯环 PingRing 为你的定时任务、批处理脚本与在线服务站岗：一切正常时它保持沉默，该响没响的那一刻，它立刻通过企业微信、钉钉、飞书找到你。</p>
+    <div class="pulse-box">
+        <svg viewBox="0 0 720 90" width="100%" aria-hidden="true">
+            <line x1="0" y1="45" x2="720" y2="45" stroke="#ddd5c6" stroke-width="1"/>
+            <polyline class="pulse-line" points="0,45 240,45 262,45 276,14 296,76 308,45 470,45 492,45 506,14 526,76 538,45 720,45"
+                      fill="none" stroke="#1ea65a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </div>
+    <div class="hero-cta">
+        <a class="btn btn-dark" href="#pricing">查看价格</a>
+        <a class="btn btn-ghost" href="mailto:huoyuan453@gmail.com">咨询购买</a>
+    </div>
+    <div class="hero-note">私有化部署 · 数据不出内网 · 一次性买断，无订阅费</div>
+</div>
+
+<div class="wrap">
+    <div class="mock" role="img" aria-label="讯环检查项列表界面示意">
+        <div class="mock-bar">
+            <i style="background:#d8d0bd"></i><i style="background:#d8d0bd"></i><i style="background:#d8d0bd"></i>
+            <span>讯环 PingRing · 检查项</span>
+        </div>
+        <div class="mock-row"><span class="dot up"></span><span class="nm">每日销售报表</span><span class="tag">报表</span><span class="meta">周期 1 天 · 最近打卡 12 分钟前</span><span class="st" style="color:var(--green)">正常</span></div>
+        <div class="mock-row"><span class="dot up"></span><span class="nm">数据库备份</span><span class="tag">备份</span><span class="meta">Cron 0 3 * * * · 最近打卡 5 小时前</span><span class="st" style="color:var(--green)">正常</span></div>
+        <div class="mock-row"><span class="dot grace"></span><span class="nm">库存同步接口</span><span class="tag">接口</span><span class="meta">周期 30 分钟 · 最近打卡 41 分钟前</span><span class="st" style="color:var(--amber)">已延迟</span></div>
+        <div class="mock-row"><span class="dot down"></span><span class="nm">证书续期脚本</span><span class="tag">运维</span><span class="meta">周期 7 天 · 最近打卡 9 天前</span><span class="st" style="color:var(--red)">故障</span></div>
+    </div>
+    <div class="mock-cap">界 面 示 意</div>
+</div>
+
+<section class="wrap">
+    <div class="sec-head">
+        <div class="kicker">为什么需要它</div>
+        <h2 class="serif">沉默的失败，最贵</h2>
+    </div>
+    <div class="pains">
+        <div class="pain">
+            <h3>任务悄悄停了</h3>
+            <p>凌晨的备份脚本报错退出，没人知道。直到要用备份的那天，才发现已经断了三个星期。</p>
+        </div>
+        <div class="pain">
+            <h3>报表悄悄旧了</h3>
+            <p>每天早上发出的经营报表其实是三天前的数据——生成任务早就失败了，只是从没人给它装过告警。</p>
+        </div>
+        <div class="pain">
+            <h3>发现永远靠人</h3>
+            <p>靠人每天去点、去查、去确认，漏一次就是一次事故。监控这件事，应该交给一个不知疲倦的系统。</p>
+        </div>
+    </div>
+</section>
+
+<hr class="rule">
+
+<section class="wrap" id="features">
+    <div class="sec-head">
+        <div class="kicker">核 心 功 能</div>
+        <h2 class="serif">简单机制，完整闭环</h2>
+        <p>原理只有一句话：任务完成后向讯环打一次卡；到期没等到打卡，就判定异常并发起通知。</p>
+    </div>
+    <div class="features">
+        <div class="feature">
+            <div class="no">01</div>
+            <h3>心跳打卡监控</h3>
+            <p>每个任务对应一个专属打卡 URL（或打卡邮箱）。支持开始/成功/失败信号，还能回传运行时长，跑太久同样告警。</p>
+        </div>
+        <div class="feature">
+            <div class="no">02</div>
+            <h3>三种调度方式</h3>
+            <p>固定间隔、Cron 表达式、systemd OnCalendar 表达式，附带宽限期设置——晚几分钟不误报，超时才升级。</p>
+        </div>
+        <div class="feature">
+            <div class="no">03</div>
+            <h3>40+ 通知渠道</h3>
+            <p>企业微信、钉钉、飞书深度适配（机器人 Webhook、加签/签名校验、错误感知），另有邮件、短信、电话、Webhook、Telegram、Slack 等四十余种。</p>
+        </div>
+        <div class="feature">
+            <div class="no">04</div>
+            <h3>状态页与徽章</h3>
+            <p>为每个项目生成公开状态徽章，嵌到内部 Wiki 或值班大屏上，服务健康一目了然。</p>
+        </div>
+        <div class="feature">
+            <div class="no">05</div>
+            <h3>团队与项目</h3>
+            <p>按项目组织检查项与渠道，成员分级授权；谁负责什么系统，告警就精准送到谁手里。</p>
+        </div>
+        <div class="feature">
+            <div class="no">06</div>
+            <h3>开放 API</h3>
+            <p>完整的 REST API，可把检查项的创建、暂停、状态查询接入你现有的运维脚本与发布流程。</p>
+        </div>
+    </div>
+    <div class="chips">
+        <span class="chip hot">企业微信</span>
+        <span class="chip hot">钉钉</span>
+        <span class="chip hot">飞书</span>
+        <span class="chip">电子邮件</span>
+        <span class="chip">Webhook</span>
+        <span class="chip">短信</span>
+        <span class="chip">电话</span>
+        <span class="chip">Telegram</span>
+        <span class="chip">Slack</span>
+        <span class="chip">Discord</span>
+        <span class="chip">PagerDuty</span>
+        <span class="chip">ntfy</span>
+        <span class="chip">等 40+ 种</span>
+    </div>
+</section>
+
+<hr class="rule">
+
+<section class="wrap" id="install">
+    <div class="sec-head">
+        <div class="kicker">部 署 上 线</div>
+        <h2 class="serif">三步，装进你自己的服务器</h2>
+        <p>一台 1 核 2G 的 Linux 服务器即可（Docker 环境）。数据全程在你的内网，不经过任何第三方。</p>
+    </div>
+    <div class="steps">
+        <div class="step">
+            <div class="n serif">一</div>
+            <h3>运行一键安装</h3>
+            <p>解压交付包，运行安装脚本：自动生成密钥、拉起数据库与 Web 服务、完成初始化。</p>
+            <div class="codebox"><span class="cm"># 在服务器上</span><br>./install.sh</div>
+        </div>
+        <div class="step">
+            <div class="n serif">二</div>
+            <h3>创建检查项</h3>
+            <p>登录中文界面，创建管理员账号与第一个检查项，并接好企业微信、钉钉或飞书机器人。</p>
+        </div>
+        <div class="step">
+            <div class="n serif">三</div>
+            <h3>给任务加上打卡</h3>
+            <p>在你的脚本或 crontab 末尾加一行 curl。任务照常跑，讯环开始站岗。</p>
+            <div class="codebox"><span class="cm"># 任务成功后打卡</span><br>curl -fsS https://ping.example.com/ping/&lt;uuid&gt;</div>
+        </div>
+    </div>
+</section>
+
+<hr class="rule">
+
+<section class="wrap" id="pricing">
+    <div class="sec-head">
+        <div class="kicker">价 格</div>
+        <h2 class="serif">买断授权，没有订阅</h2>
+        <p>一次付费，长期使用。不按检查项数量收费，不按月续费。</p>
+    </div>
+    <div class="pricing">
+        <div class="price-card">
+            <div class="tier">基 础 版</div>
+            <div class="amount serif">¥2,999<small> / 套</small></div>
+            <div class="once">一次性买断 · 单机私有化部署</div>
+            <ul>
+                <li>全部监控与告警功能，不限检查项数量</li>
+                <li>全部通知渠道（含企业微信 / 钉钉 / 飞书）</li>
+                <li>一键部署包与中文部署文档</li>
+                <li>中文界面</li>
+                <li>邮件支持</li>
+            </ul>
+            <a class="btn btn-ghost order-btn" href="#order" data-version="基础版 ¥2,999">立即下单</a>
+        </div>
+        <div class="price-card pro">
+            <div class="tier">企 业 版</div>
+            <div class="amount serif">¥7,999<small> / 套</small></div>
+            <div class="once">一次性买断 · 含落地协助</div>
+            <ul>
+                <li>包含基础版全部内容</li>
+                <li>远程部署协助一次，装好再交付</li>
+                <li>协助对接内部系统与通知渠道配置</li>
+                <li>优先支持响应</li>
+                <li>面向多团队、多项目的部署规划建议</li>
+            </ul>
+            <a class="btn btn-dark order-btn" href="#order" data-version="企业版 ¥7,999">立即下单</a>
+        </div>
+    </div>
+    <p class="price-note">下单后我们会通过邮件与你确认付款方式，付款后即交付部署包。</p>
+</section>
+
+<hr class="rule">
+
+<section class="wrap" id="order">
+    <div class="sec-head">
+        <div class="kicker">下 单</div>
+        <h2 class="serif">留个邮箱，我们联系你</h2>
+        <p>提交后订单会直接发到我们的邮箱，一般在一个工作日内回复确认与付款方式；付款后通过邮件交付部署包。</p>
+    </div>
+    <div class="thanks-box" id="thanks">
+        <strong class="serif" style="font-size:19px;">订单已收到，谢谢。</strong><br>
+        我们会尽快通过邮件与你确认付款方式与交付时间。如需加急，直接邮件 huoyuan453@gmail.com。
+    </div>
+    <form class="order-form" action="https://formsubmit.co/huoyuan453@gmail.com" method="POST">
+        <input type="hidden" name="_subject" value="【讯环订单】新下单通知">
+        <input type="hidden" name="_template" value="table">
+        <input type="hidden" name="_next" value="https://huoyuan461.github.io/pingring-site/#thanks">
+        <input type="text" name="_honey" style="display:none">
+        <div class="field">
+            <label for="f-company">公司 / 团队名称 *</label>
+            <input id="f-company" type="text" name="公司名称" required>
+        </div>
+        <div class="field">
+            <label for="f-contact">联系人</label>
+            <input id="f-contact" type="text" name="联系人">
+        </div>
+        <div class="field">
+            <label for="f-email">邮箱 *</label>
+            <input id="f-email" type="email" name="邮箱" required>
+        </div>
+        <div class="field">
+            <label for="f-version">选择版本</label>
+            <select id="f-version" name="版本">
+                <option>基础版 ¥2,999</option>
+                <option>企业版 ¥7,999</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="f-msg">需求备注</label>
+            <textarea id="f-msg" name="备注" placeholder="例如：大概多少个检查项、是否需要发票、期望交付时间"></textarea>
+        </div>
+        <button class="btn btn-dark" type="submit">提交订单</button>
+    </form>
+    <p class="order-note">也可以直接邮件下单：<a href="mailto:huoyuan453@gmail.com" style="color:var(--bronze)">huoyuan453@gmail.com</a></p>
+</section>
+
+<hr class="rule">
+
+<section class="wrap" id="faq">
+    <div class="sec-head">
+        <div class="kicker">常 见 问 题</div>
+        <h2 class="serif">先问清楚，再决定</h2>
+    </div>
+    <div class="faq">
+        <div class="faq-item">
+            <h3>数据会经过你们的服务器吗？</h3>
+            <p>不会。讯环是私有化部署：软件装在你自己的服务器上，检查记录、账号与通知配置全部保存在本地数据库中，数据不出内网。</p>
+        </div>
+        <div class="faq-item">
+            <h3>它能监控哪些东西？</h3>
+            <p>一切“应该定期发生、但可能悄悄失败”的事情：cron 定时任务、数据备份、报表生成、ETL 同步、证书续期，以及任何能发出 HTTP 请求的服务与脚本。服务本身也可以定时调用打卡接口做存活上报。</p>
+        </div>
+        <div class="faq-item">
+            <h3>和按月付费的云端监控服务有什么区别？</h3>
+            <p>两点：一是部署位置——讯环在你的内网里，适合不能把运维数据交给外部平台的团队；二是付费方式——一次性买断，没有按量、按席位、按年续费的持续支出。</p>
+        </div>
+        <div class="faq-item">
+            <h3>讯环的软件基础可靠吗？</h3>
+            <p>讯环基于成熟的开源项目 Healthchecks 构建（BSD 3-Clause 开源许可证），在其久经验证的监控内核之上做了品牌、中文界面与国内通知渠道的适配，并按许可证要求完整保留了上游版权与许可声明。</p>
+        </div>
+        <div class="faq-item">
+            <h3>服务器有什么要求？</h3>
+            <p>一台能跑 Docker 的 Linux 服务器即可，1 核 2G 起步可支撑中小团队的监控量；数据库使用 PostgreSQL，随部署包一并安装。</p>
+        </div>
+        <div class="faq-item">
+            <h3>买了之后怎么交付？</h3>
+            <p>付款后通过邮件交付部署包（程序 + 一键安装脚本 + 中文部署文档）。企业版另行约定远程部署协助的时间。</p>
+        </div>
+    </div>
+</section>
+
+<hr class="rule">
+
+<section class="wrap final">
+    <h2 class="serif">让下一次故障，先找到你</h2>
+    <p>而不是等到用户、老板或客户找上门。</p>
+    <a class="btn btn-dark" href="#order">立即下单</a>
+</section>
+
+<footer>
+    <div class="wrap">
+        <div>讯环 PingRing © 2026</div>
+        <div>基于开源项目 <a href="https://github.com/healthchecks/healthchecks" rel="noopener">Healthchecks</a>（BSD 3-Clause 许可证）构建</div>
+        <div>联系：<a href="mailto:huoyuan453@gmail.com">huoyuan453@gmail.com</a></div>
+    </div>
+</footer>
+
+<script>
+    document.querySelectorAll('.order-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            var sel = document.getElementById('f-version');
+            if (sel && btn.dataset.version) sel.value = btn.dataset.version;
+        });
+    });
+    if (location.hash === '#thanks') {
+        var box = document.getElementById('thanks');
+        if (box) box.classList.add('show');
+    }
+</script>
+
+</body>
+</html>
